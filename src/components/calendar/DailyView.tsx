@@ -20,6 +20,8 @@ const CELL_WIDTH = 60;
 const CELL_HEIGHT = 60;
 const LABEL_WIDTH = 100;
 const HEADER_HEIGHT = 40;
+const WINDOW_START_MIN = 8 * 60; // 08:00 — first visible time slot
+const WINDOW_END_MIN = WINDOW_START_MIN + TIME_SLOTS.length * 30; // end of last visible slot
 const BUFFER_DAYS_BEFORE = 7;
 const INITIAL_DAYS = 21;
 const LOAD_BATCH = 7;
@@ -119,13 +121,25 @@ const DailyView: React.FC<DailyViewProps> = ({ currentDate, events, onCellClick,
     const effectiveStart = start < dayStart ? dayStart : start;
     const effectiveEnd = end > dayEnd ? dayEnd : end;
 
-    const startMinutes = differenceInMinutes(effectiveStart, dayStart);
-    const durationMinutes = differenceInMinutes(effectiveEnd, effectiveStart);
+    let startMinutes = differenceInMinutes(effectiveStart, dayStart);
+    let endMinutes = differenceInMinutes(effectiveEnd, dayStart);
 
-    const left = LABEL_WIDTH + ((startMinutes / 30) - 16) * CELL_WIDTH;
-    const width = Math.max((durationMinutes / 30) * CELL_WIDTH, 20);
+    // Clamp to the visible time window (08:00 - 18:30) so multi-day events
+    // don't overflow across the whole row.
+    startMinutes = Math.max(startMinutes, WINDOW_START_MIN);
+    endMinutes = Math.min(endMinutes, WINDOW_END_MIN);
 
-    return { left, width };
+    // Event does not overlap the visible window on this day.
+    if (endMinutes <= startMinutes) return null;
+
+    const left = LABEL_WIDTH + ((startMinutes - WINDOW_START_MIN) / 30) * CELL_WIDTH;
+    const width = Math.max(((endMinutes - startMinutes) / 30) * CELL_WIDTH, 20);
+
+    // Whether this segment is a continuation from the previous/next day.
+    const continuesBefore = start < effectiveStart || startMinutes > differenceInMinutes(effectiveStart, dayStart);
+    const continuesAfter = end > effectiveEnd || endMinutes < differenceInMinutes(effectiveEnd, dayStart);
+
+    return { left, width, continuesBefore, continuesAfter };
   };
 
   return (
@@ -187,21 +201,29 @@ const DailyView: React.FC<DailyViewProps> = ({ currentDate, events, onCellClick,
 
                 {/* Events overlay */}
                 {dayEvents.map((event) => {
-                  const { left, width } = getEventStyle(event, day);
+                  const style = getEventStyle(event, day);
+                  if (!style) return null;
+                  const { left, width, continuesBefore, continuesAfter } = style;
                   return (
                     <div
                       key={event.id}
                       onClick={(e) => { e.stopPropagation(); onEventClick(event); }}
-                      className="absolute top-1 rounded-md px-1.5 py-0.5 text-xs text-white cursor-pointer hover:opacity-90 shadow-sm overflow-hidden whitespace-nowrap z-10"
+                      className="absolute top-1 px-1.5 py-0.5 text-xs text-white cursor-pointer hover:opacity-90 shadow-sm overflow-hidden whitespace-nowrap z-10"
                       style={{
                         left,
                         width,
                         height: CELL_HEIGHT - 8,
                         backgroundColor: event.color || '#4285F4',
+                        borderTopLeftRadius: continuesBefore ? 0 : 6,
+                        borderBottomLeftRadius: continuesBefore ? 0 : 6,
+                        borderTopRightRadius: continuesAfter ? 0 : 6,
+                        borderBottomRightRadius: continuesAfter ? 0 : 6,
                       }}
-                      title={`${event.title} (${format(parseISO(event.start_datetime), 'HH:mm')} - ${format(parseISO(event.end_datetime), 'HH:mm')})`}
+                      title={`${event.title} (${format(parseISO(event.start_datetime), 'd MMM HH:mm')} - ${format(parseISO(event.end_datetime), 'd MMM HH:mm')})`}
                     >
-                      <div className="font-medium truncate">{event.title}</div>
+                      <div className="font-medium truncate">
+                        {continuesBefore && '◀ '}{event.title}{continuesAfter && ' ▶'}
+                      </div>
                       <div className="text-[10px] opacity-80 truncate">
                         {format(parseISO(event.start_datetime), 'HH:mm')}-{format(parseISO(event.end_datetime), 'HH:mm')}
                       </div>

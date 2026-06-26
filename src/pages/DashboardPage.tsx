@@ -2,18 +2,18 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import { DashboardStats, ChartData, CATEGORIES, Event } from '../types';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { format, parseISO } from 'date-fns';
 import { th } from 'date-fns/locale';
 
 const statCards = [
-  { key: 'today_count', label: 'วันนี้', icon: '📅', color: 'bg-blue-500' },
-  { key: 'week_count', label: 'สัปดาห์นี้', icon: '📆', color: 'bg-green-500' },
-  { key: 'month_count', label: 'เดือนนี้', icon: '🗓', color: 'bg-purple-500' },
-  { key: 'total_count', label: 'ทั้งหมด', icon: '📊', color: 'bg-indigo-500' },
-  { key: 'pending_count', label: 'ยังไม่เสร็จ', icon: '⏳', color: 'bg-yellow-500' },
-  { key: 'urgent_count', label: 'งานด่วน', icon: '🔥', color: 'bg-red-500' },
-  { key: 'in_progress_count', label: 'กำลังทำ', icon: '🔄', color: 'bg-orange-500' },
+  { key: 'today_count', label: 'วันนี้', icon: '📅', color: 'bg-blue-500', ring: 'ring-blue-500' },
+  { key: 'week_count', label: 'สัปดาห์นี้', icon: '📆', color: 'bg-green-500', ring: 'ring-green-500' },
+  { key: 'month_count', label: 'เดือนนี้', icon: '🗓', color: 'bg-purple-500', ring: 'ring-purple-500' },
+  { key: 'total_count', label: 'ทั้งหมด', icon: '📊', color: 'bg-indigo-500', ring: 'ring-indigo-500' },
+  { key: 'pending_count', label: 'ยังไม่เสร็จ', icon: '⏳', color: 'bg-yellow-500', ring: 'ring-yellow-500' },
+  { key: 'urgent_count', label: 'งานด่วน', icon: '🔥', color: 'bg-red-500', ring: 'ring-red-500' },
+  { key: 'in_progress_count', label: 'กำลังทำ', icon: '🔄', color: 'bg-orange-500', ring: 'ring-orange-500' },
 ];
 
 const statusMap: Record<string, { label: string; class: string }> = {
@@ -22,34 +22,64 @@ const statusMap: Record<string, { label: string; class: string }> = {
   cancelled: { label: 'ยกเลิก', class: 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' },
 };
 
+const priorityMap: Record<string, { label: string; class: string }> = {
+  low: { label: 'ต่ำ', class: 'bg-gray-100 text-gray-600' },
+  medium: { label: 'ปกติ', class: 'bg-blue-100 text-blue-600' },
+  high: { label: 'สูง', class: 'bg-orange-100 text-orange-600' },
+  urgent: { label: 'ด่วน', class: 'bg-red-100 text-red-600' },
+};
+
 const DashboardPage: React.FC = () => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [charts, setCharts] = useState<ChartData | null>(null);
   const [recentEvents, setRecentEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeFilter, setActiveFilter] = useState<string | null>(null);
+  const [filteredEvents, setFilteredEvents] = useState<Event[]>([]);
+  const [filterLoading, setFilterLoading] = useState(false);
   const navigate = useNavigate();
 
+  const fetchDashboard = async () => {
+    try {
+      const [statsRes, chartsRes, eventsRes] = await Promise.all([
+        api.get('/dashboard/stats'),
+        api.get('/dashboard/charts'),
+        api.get('/events', { params: { limit: 10 } }),
+      ]);
+      setStats(statsRes.data);
+      setCharts(chartsRes.data);
+      const events = Array.isArray(eventsRes.data) ? eventsRes.data : eventsRes.data.events || [];
+      setRecentEvents(events.slice(0, 10));
+    } catch {
+      setStats({ today_count: 0, week_count: 0, month_count: 0, total_count: 0, pending_count: 0, urgent_count: 0, in_progress_count: 0 });
+      setCharts({ monthly_counts: [], category_counts: [], daily_hours: [] });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [statsRes, chartsRes, eventsRes] = await Promise.all([
-          api.get('/dashboard/stats'),
-          api.get('/dashboard/charts'),
-          api.get('/events', { params: { limit: 10 } }),
-        ]);
-        setStats(statsRes.data);
-        setCharts(chartsRes.data);
-        const events = Array.isArray(eventsRes.data) ? eventsRes.data : eventsRes.data.events || [];
-        setRecentEvents(events.slice(0, 10));
-      } catch {
-        setStats({ today_count: 0, week_count: 0, month_count: 0, total_count: 0, pending_count: 0, urgent_count: 0, in_progress_count: 0 });
-        setCharts({ monthly_counts: [], category_counts: [], daily_hours: [] });
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
+    fetchDashboard();
   }, []);
+
+  const handleCardClick = async (key: string) => {
+    if (activeFilter === key) {
+      setActiveFilter(null);
+      setFilteredEvents([]);
+      return;
+    }
+
+    setActiveFilter(key);
+    setFilterLoading(true);
+    try {
+      const res = await api.get('/dashboard/filter', { params: { type: key } });
+      setFilteredEvents(res.data.events || []);
+    } catch {
+      setFilteredEvents([]);
+    } finally {
+      setFilterLoading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -60,15 +90,22 @@ const DashboardPage: React.FC = () => {
   }
 
   const categoryColors = CATEGORIES.reduce((acc, c) => ({ ...acc, [c.name]: c.color }), {} as Record<string, string>);
+  const activeLabel = activeFilter ? statCards.find(c => c.key === activeFilter)?.label : '';
 
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold dark:text-white">แดชบอร์ด</h2>
 
-      {/* Stat Cards - single row */}
+      {/* Stat Cards - clickable */}
       <div className="grid grid-cols-7 gap-2">
         {statCards.map((card) => (
-          <div key={card.key} className="card p-3 flex items-center gap-2">
+          <div
+            key={card.key}
+            onClick={() => handleCardClick(card.key)}
+            className={`card p-3 flex items-center gap-2 cursor-pointer transition-all hover:shadow-md ${
+              activeFilter === card.key ? `ring-2 ${card.ring} shadow-lg scale-[1.02]` : ''
+            }`}
+          >
             <span className={`w-8 h-8 ${card.color} rounded-lg flex items-center justify-center text-white text-sm flex-shrink-0`}>
               {card.icon}
             </span>
@@ -79,6 +116,89 @@ const DashboardPage: React.FC = () => {
           </div>
         ))}
       </div>
+
+      {/* Filtered Events Table */}
+      {activeFilter && (
+        <div className="card p-6 animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold dark:text-white">
+              รายการ: {activeLabel} ({filteredEvents.length})
+            </h3>
+            <button
+              onClick={() => { setActiveFilter(null); setFilteredEvents([]); }}
+              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          {filterLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-500" />
+            </div>
+          ) : (
+            <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-white dark:bg-gray-900">
+                  <tr className="border-b border-gray-200 dark:border-gray-700">
+                    <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">#</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">กิจกรรม</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">เวลา</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">หมวด</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">ความสำคัญ</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">สถานะ</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">การดำเนินการ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredEvents.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="text-center py-8 text-gray-400">ไม่มีกิจกรรม</td>
+                    </tr>
+                  ) : (
+                    filteredEvents.map((event, idx) => {
+                      const catColor = CATEGORIES.find(c => c.name === event.category)?.color || event.color || '#888';
+                      const status = statusMap[event.status] || statusMap.in_progress;
+                      const priority = priorityMap[event.priority] || priorityMap.medium;
+                      return (
+                        <tr key={event.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                          <td className="py-3 px-4 text-gray-400">{idx + 1}</td>
+                          <td className="py-3 px-4 dark:text-white font-medium">{event.title}</td>
+                          <td className="py-3 px-4 text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                            {format(parseISO(event.start_datetime), 'd MMM yyyy', { locale: th })}{' '}
+                            <span className="text-gray-400">{format(parseISO(event.start_datetime), 'HH:mm')}-{format(parseISO(event.end_datetime), 'HH:mm')}</span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full" style={{ backgroundColor: catColor + '20', color: catColor }}>
+                              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: catColor }} />
+                              {event.category}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${priority.class}`}>{priority.label}</span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${status.class}`}>{status.label}</span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <button
+                              onClick={() => navigate('/calendar/daily')}
+                              className="text-primary-500 hover:text-primary-700 text-xs font-medium hover:underline"
+                            >
+                              ดูรายละเอียด
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -101,16 +221,13 @@ const DashboardPage: React.FC = () => {
                 const endTime = format(parseISO(event.end_datetime), 'HH:mm');
                 return (
                   <div key={event.id} className="flex items-stretch gap-3 group">
-                    {/* Time */}
                     <div className="w-14 flex-shrink-0 text-right pt-2.5">
                       <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">{startTime}</span>
                     </div>
-                    {/* Timeline line */}
                     <div className="flex flex-col items-center flex-shrink-0">
                       <div className="w-3 h-3 rounded-full border-2 mt-2.5 flex-shrink-0" style={{ borderColor: catColor, backgroundColor: event.status === 'completed' ? catColor : 'transparent' }} />
                       <div className="w-0.5 flex-1 bg-gray-200 dark:bg-gray-700" />
                     </div>
-                    {/* Content */}
                     <div className="flex-1 pb-3 pt-1">
                       <div className="rounded-lg p-3 border border-gray-100 dark:border-gray-700 group-hover:bg-gray-50 dark:group-hover:bg-gray-800 transition-colors cursor-pointer" onClick={() => navigate('/calendar/daily')}>
                         <div className="flex items-center justify-between gap-2">
@@ -164,6 +281,7 @@ const DashboardPage: React.FC = () => {
               <thead>
                 <tr className="border-b border-gray-200 dark:border-gray-700">
                   <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">กิจกรรม</th>
+                  <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">รายละเอียด</th>
                   <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">เวลา</th>
                   <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">หมวด</th>
                   <th className="text-left py-3 px-4 font-semibold text-gray-600 dark:text-gray-300">สถานะ</th>
@@ -173,7 +291,7 @@ const DashboardPage: React.FC = () => {
               <tbody>
                 {recentEvents.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="text-center py-8 text-gray-400">ไม่มีกิจกรรม</td>
+                    <td colSpan={6} className="text-center py-8 text-gray-400">ไม่มีกิจกรรม</td>
                   </tr>
                 ) : (
                   recentEvents.map((event) => {
@@ -182,6 +300,11 @@ const DashboardPage: React.FC = () => {
                     return (
                       <tr key={event.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
                         <td className="py-3 px-4 dark:text-white font-medium">{event.title}</td>
+                        <td className="py-3 px-4 text-gray-500 dark:text-gray-400 max-w-[260px]">
+                          <span className="block truncate" title={event.description || ''}>
+                            {event.description || <span className="text-gray-300 dark:text-gray-600">-</span>}
+                          </span>
+                        </td>
                         <td className="py-3 px-4 text-gray-500 dark:text-gray-400 whitespace-nowrap">
                           {format(parseISO(event.start_datetime), 'd MMM', { locale: th })}{' '}
                           <span className="text-gray-400">{format(parseISO(event.start_datetime), 'HH:mm')}-{format(parseISO(event.end_datetime), 'HH:mm')}</span>

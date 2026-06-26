@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import toast from 'react-hot-toast';
 
@@ -67,13 +67,6 @@ const LoginPage: React.FC = () => {
               {loading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
             </button>
           </form>
-
-          <p className="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
-            ยังไม่มีบัญชี?{' '}
-            <Link to="/register" className="text-primary-500 hover:text-primary-600 font-medium">
-              สมัครสมาชิก
-            </Link>
-          </p>
         </div>
       </div>
     </div>
